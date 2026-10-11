@@ -1,0 +1,6 @@
+plugins {
+    // 8.7.3 needs Gradle 8.9+; the wrapper is pinned to 8.14.3 to match.
+    // Both are already in the local caches, so a clean build downloads
+    // nothing.
+    id "com.android.application" version "8.7.3" apply false
+}

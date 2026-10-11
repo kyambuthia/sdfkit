@@ -1,5 +1,12 @@
 # build output
 build/
 
+# android
+android/.gradle/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+android/app/src/main/assets/
+
 # scratch
 _*

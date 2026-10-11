@@ -51,7 +51,16 @@ struct Hooks {
     KeyFn key;
 };
 
-/// Runs until the window closes. Never returns normally before then.
-int run(const Config &config, Hooks hooks);
+struct Setup {
+    Config config;
+    Hooks hooks;
+};
+
+/// Every sdfkit game defines this; sdfkit owns the entry point.
+///
+/// Android needs a sokol_main() returning a descriptor while desktop needs a
+/// main() that blocks - sokol explicitly does not support sapp_run() on
+/// Android - and a game should not have to know which it is being built for.
+Setup configure();
 
 } // namespace sdfkit

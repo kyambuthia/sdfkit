@@ -13,9 +13,13 @@
 #if !defined(SOKOL_GLCORE)
 #define SOKOL_GLES3
 #endif
-// sokol_app supplies its own main() that calls sokol_main(); we drive it
-// through sapp_run() from run() instead, so the game owns its entry point.
+// Desktop: sokol_app would supply its own main(); we drive it through
+// sapp_run() instead. Android has no main() at all and sokol explicitly does
+// not support sapp_run() there, so it keeps sokol_main().
+
+#if !defined(__ANDROID__)
 #define SOKOL_NO_ENTRY
+#endif
 #include "sokol_app.h"
 #include "sokol_gfx.h"
 #include "sokol_glue.h"
@@ -130,6 +134,26 @@ void main() {
 }
 )";
 
+#if defined(__ANDROID__)
+#include <android/asset_manager.h>
+#include <android/native_activity.h>
+
+// Shaders live inside the APK, not on the filesystem, so they come through
+// the asset manager. Hot-reload is desktop-only for the same reason: an
+// asset has no mtime to watch.
+std::string read_file(const fs::path &path) {
+    auto *activity = static_cast<ANativeActivity *>(
+        const_cast<void *>(sapp_android_get_native_activity()));
+    if (!activity) return {};
+    AAsset *asset = AAssetManager_open(activity->assetManager,
+                                       path.c_str(), AASSET_MODE_BUFFER);
+    if (!asset) return {};
+    const auto length = static_cast<size_t>(AAsset_getLength(asset));
+    std::string out(static_cast<const char *>(AAsset_getBuffer(asset)), length);
+    AAsset_close(asset);
+    return out;
+}
+#else
 std::string read_file(const fs::path &path) {
     std::ifstream file(path);
     if (!file) return {};
@@ -137,6 +161,7 @@ std::string read_file(const fs::path &path) {
     out << file.rdbuf();
     return out.str();
 }
+#endif
 
 struct State {
     Config config;
@@ -284,34 +309,50 @@ void cleanup() {
 
 } // namespace
 
-int run(const Config &config, Hooks hooks) {
-    g.config = config;
-    g.hooks = std::move(hooks);
+
+/// Builds the descriptor and installs the game's hooks. Shared by both entry
+/// points below.
+sapp_desc describe() {
+    sdfkit::Setup setup = sdfkit::configure();
+    g.config = setup.config;
+    g.hooks = std::move(setup.hooks);
 
     sapp_desc desc{};
     desc.init_cb = init;
     desc.frame_cb = frame;
     desc.event_cb = event;
     desc.cleanup_cb = cleanup;
-    desc.width = config.width;
-    desc.height = config.height;
+    desc.width = g.config.width;
+    desc.height = g.config.height;
     desc.window_title = g.config.title.c_str();
-    // sokol defaults to 4.1, which neither backend here can give:
-    // Mesa on this Sandy Bridge part tops out at a 3.3 desktop core
-    // profile, and ES has no version above 3.2. A refused request is a
-    // hard panic rather than a downgrade, so it has to be asked for
-    // correctly per backend.
+    // sokol defaults to GL 4.1, which neither backend here can give: Mesa on
+    // the development machine tops out at a 3.3 desktop core profile, and ES
+    // has no version above 3.2. A refused request is a hard panic rather
+    // than a downgrade, so it has to be asked for correctly per backend.
     desc.gl.major_version = 3;
 #if defined(SOKOL_GLES3)
-    // ES has no 3.3; the versions are 3.0, 3.1, 3.2. Asking for 3.3 makes
-    // eglCreateContext fail outright.
+    // ES versions are 3.0, 3.1, 3.2 - there is no 3.3. Carrying the desktop
+    // minor version over fails eglCreateContext outright.
     desc.gl.minor_version = 0;
 #else
     desc.gl.minor_version = 3;
 #endif
     desc.logger.func = slog_func;
-    sapp_run(&desc);
-    return 0;
+    return desc;
 }
 
 } // namespace sdfkit
+
+#if defined(__ANDROID__)
+// Android has no main(); the native activity calls sokol_main() for the
+// descriptor and sokol drives the loop itself.
+sapp_desc sokol_main(int, char **) {
+    return sdfkit::describe();
+}
+#else
+int main() {
+    sapp_desc desc = sdfkit::describe();
+    sapp_run(&desc);
+    return 0;
+}
+#endif

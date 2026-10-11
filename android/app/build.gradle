@@ -1,0 +1,40 @@
+plugins { id "com.android.application" }
+
+android {
+    namespace "com.sdfkit.demo"
+    compileSdk 34
+    ndkVersion "29.0.14206865"
+
+    defaultConfig {
+        applicationId "com.sdfkit.demo"
+        // 24 is where GLES 3.0 is dependable across the field; the engine
+        // needs nothing newer.
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "0.1.0"
+        ndk { abiFilters "armeabi-v7a", "arm64-v8a" }
+        externalNativeBuild {
+            cmake { arguments "-DSDFKIT_ANDROID=ON", "-DANDROID_STL=c++_shared" }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "../../CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    buildTypes {
+        release { minifyEnabled false }
+    }
+}
+
+// Shaders are read at runtime from the APK's assets rather than compiled
+// into the binary, so the desktop and Android builds load the same files.
+tasks.register("syncShaders", Copy) {
+    from "${rootDir}/../shaders"
+    into "${projectDir}/src/main/assets/shaders"
+}
+tasks.named("preBuild") { dependsOn "syncShaders" }
