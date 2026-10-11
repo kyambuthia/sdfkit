@@ -6,7 +6,13 @@
 #include <sstream>
 
 #define SOKOL_IMPL
-#define SOKOL_GLCORE
+// GLES3 by default: GLSL ES 300 reaches Android 4.3+, iOS, WebGL2 and
+// desktop Mesa, where a desktop core profile reaches none of the first
+// three. The shader body is identical either way; only the version header
+// and precision qualifiers differ, and those are injected below.
+#if !defined(SOKOL_GLCORE)
+#define SOKOL_GLES3
+#endif
 // sokol_app supplies its own main() that calls sokol_main(); we drive it
 // through sapp_run() from run() instead, so the game owns its entry point.
 #define SOKOL_NO_ENTRY
@@ -22,7 +28,16 @@ namespace fs = std::filesystem;
 
 // Prepended to every scene. Declares the uniforms and pulls in the shared
 // primitives; the scene then only has to define `scene()` and `shade()`.
-constexpr const char *kPrelude = R"(#version 330
+constexpr const char *kVersion =
+#if defined(SOKOL_GLES3)
+    // ES guarantees highp in fragment shaders, and a distance field needs
+    // it - at mediump the surface tears apart at any distance.
+    "#version 300 es\nprecision highp float;\nprecision highp int;\n";
+#else
+    "#version 330\n";
+#endif
+
+constexpr const char *kPrelude = R"(
 out vec4 frag_colour;
 uniform vec4 params[4];
 #define RESOLUTION params[0].xy
@@ -107,7 +122,7 @@ void main() {
 }
 )";
 
-constexpr const char *kVertex = R"(#version 330
+constexpr const char *kVertex = R"(
 void main() {
     // Full-screen triangle: three vertices, no vertex buffer.
     vec2 uv = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
@@ -158,10 +173,12 @@ bool build_pipeline() {
         std::fprintf(stderr, "[sdfkit] missing %s\n", g.config.scene_shader.c_str());
         return false;
     }
-    const std::string fragment = kPrelude + shared + kHelpers + scene + kMain;
+    const std::string fragment =
+        kVersion + std::string(kPrelude) + shared + kHelpers + scene + kMain;
 
     sg_shader_desc shader_desc{};
-    shader_desc.vertex_func.source = kVertex;
+    const std::string vertex = kVersion + std::string(kVertex);
+    shader_desc.vertex_func.source = vertex.c_str();
     shader_desc.fragment_func.source = fragment.c_str();
     shader_desc.label = "sdf";
     shader_desc.uniform_blocks[0].stage = SG_SHADERSTAGE_FRAGMENT;
@@ -279,12 +296,19 @@ int run(const Config &config, Hooks hooks) {
     desc.width = config.width;
     desc.height = config.height;
     desc.window_title = g.config.title.c_str();
-    // Ask for 3.3 core. sokol defaults to 4.1, which this hardware refuses:
-    // Mesa on Sandy Bridge tops out at a 3.3 core profile, and the request
-    // failing is a hard panic rather than a downgrade. Our shaders are
-    // #version 330 anyway.
+    // sokol defaults to 4.1, which neither backend here can give:
+    // Mesa on this Sandy Bridge part tops out at a 3.3 desktop core
+    // profile, and ES has no version above 3.2. A refused request is a
+    // hard panic rather than a downgrade, so it has to be asked for
+    // correctly per backend.
     desc.gl.major_version = 3;
+#if defined(SOKOL_GLES3)
+    // ES has no 3.3; the versions are 3.0, 3.1, 3.2. Asking for 3.3 makes
+    // eglCreateContext fail outright.
+    desc.gl.minor_version = 0;
+#else
     desc.gl.minor_version = 3;
+#endif
     desc.logger.func = slog_func;
     sapp_run(&desc);
     return 0;

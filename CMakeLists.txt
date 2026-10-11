@@ -9,23 +9,32 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 add_library(sdfkit STATIC src/app.cpp)
-target_include_directories(sdfkit PUBLIC
-    include
-    dependencies/glm
-    dependencies/sokol)
 
-# sokol_app on Linux wants X11 and GL. Xwayland presents these windows
-# correctly under GNOME, which a native Wayland surface did not.
-find_package(OpenGL REQUIRED)
+# GLES3 by default: GLSL ES 300 reaches Android, iOS, WebGL2 and desktop Mesa
+# from one shader body. Set -DSDFKIT_GLCORE=ON for a desktop core profile.
+option(SDFKIT_GLCORE "Use a desktop GL core profile instead of GLES3" OFF)
+
 find_package(X11 REQUIRED)
 find_package(Threads REQUIRED)
 target_link_libraries(sdfkit PUBLIC
-    OpenGL::GL
     X11::X11
     X11::Xi
     X11::Xcursor
     Threads::Threads
     ${CMAKE_DL_LIBS})
+
+if(SDFKIT_GLCORE)
+    target_compile_definitions(sdfkit PUBLIC SOKOL_GLCORE)
+    find_package(OpenGL REQUIRED)
+    target_link_libraries(sdfkit PUBLIC OpenGL::GL)
+else()
+    # sokol reaches GLES3 through EGL on Linux.
+    target_link_libraries(sdfkit PUBLIC EGL GLESv2)
+endif()
+target_include_directories(sdfkit PUBLIC
+    include
+    dependencies/glm
+    dependencies/sokol)
 
 # Shaders are read at runtime, so a build only has to put them where the
 # binary will look. Copying rather than symlinking keeps the build tree
