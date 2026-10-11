@@ -1,0 +1,6 @@
+[submodule "dependencies/sokol"]
+	path = dependencies/sokol
+	url = https://github.com/floooh/sokol.git
+[submodule "dependencies/glm"]
+	path = dependencies/glm
+	url = https://github.com/g-truc/glm.git
